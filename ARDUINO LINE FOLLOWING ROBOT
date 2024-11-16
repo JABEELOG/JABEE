@@ -1,0 +1,123 @@
+#include <AFMotor.h>
+
+AF_DCMotor motor1(1); //left
+AF_DCMotor motor2(2); //right
+
+// PID control variables
+int P, D, I, previousError, PIDvalue, error;
+int lsp, rsp;
+int lfspeed = 150;
+
+float Kp = 0.05;  // Proportional gain
+float Kd = 0.01;  // Derivative gain
+float Ki = 0.01;  // Integral gain (not used in this example)
+
+// Arrays to hold min, max, and threshold values for sensors
+int minValues[5], maxValues[5], threshold[5];
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(9, INPUT_PULLUP);  // Button to calibrate
+  pinMode(10, INPUT_PULLUP);  // Button to start line following
+
+  // Initialize motors
+  motor1.setSpeed(lfspeed);
+  motor2.setSpeed(lfspeed);
+}
+
+void loop() {
+  // Wait for calibration button press
+  while (digitalRead(9)) {
+  delay(1000);
+  calibrate();
+  }
+
+  // Wait for start button press
+  while (digitalRead(10)) {}
+  delay(1000);
+
+  while (true) {
+    // Read sensor values
+    int sensorValues[5];
+    for (int i = 0; i < 5; i++) {
+      sensorValues[i] = analogRead(i + 1);  // Changed to analog 1 to 5
+    }
+
+    // Line following logic
+    if (sensorValues[1] > threshold[1] && sensorValues[5] < threshold[5]) {
+      // Turn left
+      motor1.setSpeed(0);
+      motor2.setSpeed(lfspeed);
+    } else if (sensorValues[5] > threshold[5] && sensorValues[1] < threshold[1]) {
+      // Turn right
+      motor1.setSpeed(lfspeed);
+      motor2.setSpeed(0);
+    } else if (sensorValues[2] > threshold[4]) { 
+
+      linefollow(sensorValues[3], sensorValues[3]);
+    } else 
+      // No line detected, stop motors
+      motor1.setSpeed(0);
+      motor2.setSpeed(0);
+      motor1.run(RELEASE);
+      motor2.run(RELEASE);
+    }
+  }
+
+
+void linefollow(int leftSensor, int rightSensor) {
+  error = leftSensor - rightSensor;
+
+  P = error;
+  I = I + error;
+  D = error - previousError;
+
+  PIDvalue = (Kp * P) + (Ki * I) + (Kd * D);
+  previousError = error;
+
+  lsp = lfspeed - PIDvalue;
+  rsp = lfspeed + PIDvalue;
+-
+  lsp = constrain(lsp, 0, 255);
+  rsp = constrain(rsp, 0, 255);
+
+  motor1.setSpeed(lsp);
+  motor2.setSpeed(rsp);
+
+  motor1.run(FORWARD);
+  motor2.run(FORWARD);
+}
+
+void calibrate() {
+  for (int i = 0; i < 5; i++) {
+    minValues[i] = analogRead(i + 1);  // Changed to analog 1 to 5
+    maxValues[i] = analogRead(i + 1);  // Changed to analog 1 to 5
+  }
+  
+  for (int i = 0; i < 3000; i++) {
+    motor1.setSpeed(70);
+    motor2.setSpeed(70);
+    motor1.run(FORWARD);
+    motor2.run(BACKWARD);
+
+    for (int j = 0; j < 5; j++) {
+      int sensorValue = analogRead(j + 1);  // Changed to analog 1 to 5
+      if (sensorValue < minValues[j]) {
+        minValues[j] = sensorValue;
+      }
+      if (sensorValue > maxValues[j]) {
+        maxValues[j] = sensorValue;
+      }
+    }
+  }
+
+  for (int i = 0; i < 5; i++) {
+    threshold[i] = (minValues[i] + maxValues[i]) / 2;
+    Serial.print(threshold[i]);
+    Serial.print("   ");
+  }
+  Serial.println();
+  
+  motor1.run(RELEASE);
+  motor2.run(RELEASE);
+}
